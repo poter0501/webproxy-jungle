@@ -30,12 +30,13 @@ void doit(int fd)
   printf("Request headers:\n");
   printf("%s", buf);
   sscanf(buf, "%s %s %s", method, uri, version);
-  if (strcasecmp(method, "GET"))
+  if (strcasecmp(method, "GET") != 0 && strcasecmp(method, "HEAD") != 0)
   {
     clienterror(fd, method, "501", "Not implemented",
                 "Tiny does not implement this method");
     return;
   }
+
   read_requesthdrs(&rio);
   /* Parse URI from GET request */
   is_static = parse_uri(uri, filename, cgiargs);
@@ -53,7 +54,15 @@ void doit(int fd)
                   "Tiny couldn’t read the file");
       return;
     }
-    serve_static(fd, filename, sbuf.st_size);
+
+    if (strcasecmp(method, "GET") == 0)
+    {
+      serve_static(fd, filename, sbuf.st_size);
+    }
+    else if (strcasecmp(method, "HEAD") == 0)
+    {
+      serve_get(fd, filename, sbuf.st_size);
+    }
   }
   else
   { /* Serve dynamic content */
@@ -189,6 +198,23 @@ void serve_static(int fd, char *filename, int filesize)
   Rio_writen(fd, srcp, filesize);
   free(srcp);
   // Close(srcfd);
+}
+/* homework 11.11 */
+void serve_get(int fd, char *filename, int filesize)
+{
+  int srcfd;
+  char *srcp, filetype[MAXLINE], buf[MAXBUF];
+
+  /* Send response headers to client */
+  get_filetype(filename, filetype);
+  sprintf(buf, "HTTP/1.0 200 OK\r\n");
+  sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
+  sprintf(buf, "%sConnection: close\r\n", buf);
+  sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
+  sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
+  Rio_writen(fd, buf, strlen(buf));
+  printf("Response headers:\n");
+  printf("%s", buf);
 }
 /*
  * get_filetype - Derive file type from filename
