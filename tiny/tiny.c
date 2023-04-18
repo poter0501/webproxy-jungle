@@ -19,6 +19,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
 
 void doit(int fd)
 {
+  printf("\n---------------tiny doit start--------------\n");
   int is_static;
   struct stat sbuf;
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
@@ -67,6 +68,7 @@ void doit(int fd)
     }
     serve_dynamic(fd, filename, cgiargs, method);
   }
+  printf("\n---------------tiny doit end----------------\n");
 }
 void clienterror(int fd, char *cause, char *errnum,
                  char *shortmsg, char *longmsg)
@@ -92,14 +94,17 @@ void clienterror(int fd, char *cause, char *errnum,
 }
 void read_requesthdrs(rio_t *rp)
 {
+  printf("\n---------------tiny read_requesthdrs start----------------\n");
   char buf[MAXLINE];
 
   Rio_readlineb(rp, buf, MAXLINE);
   while ((strcmp(buf, "\r\n")))
   {
     Rio_readlineb(rp, buf, MAXLINE);
+    // printf("buf = %s\n", buf);
     printf("%s", buf);
   }
+  printf("\n---------------tiny read_requesthdrs end------------------\n");
   return;
 }
 
@@ -116,11 +121,11 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
     {
       strcat(filename, "home.html");
     }
-    else if (strcmp(uri, "/video") == 0)
-    {
-      strcpy(filename, "home_with_video.html");
-      printf("filename = %s", filename);
-    }
+    // else if (strcmp(uri, "/video") == 0)
+    // {
+    //   strcpy(filename, "home_with_video.html");
+    //   printf("filename = %s", filename);
+    // }
     return 1;
   }
   else /* Dynamic comtent */
@@ -199,6 +204,8 @@ void serve_static(int fd, char *filename, int filesize, char method[MAXLINE])
   char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
   /* Send response headers to client */
+  // printf("serve_static function n tiny.c\n");
+  // printf("filename = %s\n", filename);
   get_filetype(filename, filetype);
   sprintf(buf, "HTTP/1.0 200 OK\r\n");
   sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
@@ -217,6 +224,7 @@ void serve_static(int fd, char *filename, int filesize, char method[MAXLINE])
 
   if (strcasecmp(method, "GET") == 0)
   {
+    // printf("serving ...\n");
     srcfd = Open(filename, O_RDONLY, 0);
     srcp = (char *)malloc(filesize);
     Rio_readn(srcfd, srcp, filesize);
@@ -280,7 +288,8 @@ int main(int argc, char **argv)
     fprintf(stderr, "usage: %s <port>\n", argv[0]);
     exit(1);
   }
-
+  printf("\nargv[0] = %s\n", argv[0]);
+  printf("\nargv[1] = %s\n", argv[1]);
   listenfd = Open_listenfd(argv[1]);
   while (1)
   {
