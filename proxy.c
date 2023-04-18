@@ -167,7 +167,7 @@ void response_request(rio_t *rp, int fd, int proxyfd)
   */
   printf("\nIn reponse, total = \n%s", total_buf_2);
   printf("strlen(total_buf) = %d\n", strlen(total_buf_2));
-  // Rio_writen(fd, total_buf_2, strlen(total_buf_2));
+  Rio_writen(fd, total_buf_2, strlen(total_buf_2));
 
   char *srcp = (char *)calloc(1, size_i);
   rio_readnb(rp, srcp, size_i);
