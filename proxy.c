@@ -24,6 +24,8 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
 void transfer_request(rio_t *rp, int fd, int proxyfd);
 void response_request(rio_t *rp, int fd, int proxyfd);
 
+void *thread(void *vargp);
+
 void doit(int fd)
 {
   printf("\n--------------proxy doit start--------------\n");
@@ -209,35 +211,46 @@ int parse(char *uri, char *host, char *port)
 
 int main(int argc, char **argv)
 {
-  printf("%s", user_agent_hdr);
-  // return 0;
-  int listenfd, proxyfd, connfd;
-  char hostname[MAXLINE], port[MAXLINE];
+  int listenfd, *connfdp;
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
-
-  /* Check command line args */
+  pthread_t tid;
   if (argc != 2)
   {
     fprintf(stderr, "usage: %s <port>\n", argv[0]);
-    exit(1);
+    exit(0);
   }
-  printf("\nargv[0] = %s\n", argv[0]);
-  printf("argv[1] = %s\n", argv[1]);
   listenfd = Open_listenfd(argv[1]);
   while (1)
   {
-    clientlen = sizeof(clientaddr);
-    connfd = Accept(listenfd, (SA *)&clientaddr,
-                    &clientlen); // line:netp:tiny:accept
-    Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
-                0);
-    printf("Accepted connection from (%s, %s)\n", hostname, port);
-    doit(connfd);  // line:netp:tiny:doit
-    Close(connfd); // line:netp:tiny:close
+    clientlen = sizeof(struct sockaddr_storage);
+    connfdp = Malloc(sizeof(int));
+    *connfdp = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+    Pthread_create(&tid, NULL, thread, connfdp);
   }
+  // while (1)
+  // {
+  //   clientlen = sizeof(clientaddr);
+  //   connfd = Accept(listenfd, (SA *)&clientaddr,
+  //                   &clientlen); // line:netp:tiny:accept
+  //   Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
+  //               0);
+  //   printf("Accepted connection from (%s, %s)\n", hostname, port);
+  //   doit(connfd);  // line:netp:tiny:doit
+  //   Close(connfd); // line:netp:tiny:close
+  // }
 }
 
+/* Thread routine */
+void *thread(void *vargp)
+{
+  int connfd = *((int *)vargp);
+  Pthread_detach(pthread_self());
+  Free(vargp);
+  doit(connfd);
+  Close(connfd);
+  return NULL;
+}
 // int main() {
 //   printf("%s", user_agent_hdr);
 //   return 0;
