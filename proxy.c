@@ -61,7 +61,6 @@ void print_list()
 }
 void doit(int fd)
 {
-  printf("\n--------------proxy doit start--------------\n");
   int is_static;
   int proxyfd;
   struct stat sbuf;
@@ -70,32 +69,26 @@ void doit(int fd)
   rio_t r;
   rio_t rio;
   rio_t rio2;
-
+  /* 요청 header를 tiny 서버에 넘겨주는 부분 */
   strcpy(total_buf, "");
   Rio_readinitb(&r, fd);
   Rio_readlineb(&r, buf, MAXLINE);
   printf("%s", buf);
   sscanf(buf, "%s %s %s", method, uri, version);
-  printf("uri = %s\n", uri);
   parse(uri, host, port);
-  printf("uri = %s, host = %s, port = %s\n", uri, host, port);
 
-  printf("\nmethod = %s, uri = %s, version =%s\n", method, uri, version);
-  // parse(uri, host, port);
-  printf("uri = %s, host = %s, port = %s\n", uri, host, port);
-  // printf("\nIn request, total = \n%s\n", total_buf);
-  // printf("\nmethod = %s, uri = %s, version =%s\n", method, uri, version);
   strcpy(total_buf, method);
   strcat(total_buf, " ");
   strcat(total_buf, uri);
   strcat(total_buf, " ");
   strcat(total_buf, version);
   strcat(total_buf, "\r\n\r\n");
-  printf("total_buf = %s\n", total_buf);
 
+  /* 캐싱된 리스트를 찾아서 이미 저장되어 있다면 굳이 tiny 서버에 연결하지 않고,
+  저장되어 있지 않다면 연결해서 요청을 전달하고 응답을 받아 클라이언트에게 응답을 전달 */
   block_t *target = search(uri);
-  print_list();
-  if (target == NULL) /* already cached contents */
+
+  if (target == NULL) /* not yet cached contents */
   {
     proxyfd = Open_clientfd(TINY_HOST_NAME, port);
     Rio_readinitb(&rio, fd);
@@ -107,54 +100,11 @@ void doit(int fd)
 
     Close(proxyfd);
   }
-  else /* not yet cached contents */
+  else /* already cached contents */
   {
     printf("Hit !\n");
     response_request_from_proxy(&rio2, fd, proxyfd, target);
   }
-  print_list();
-  printf("\n--------------proxy doit end----------------\n");
-}
-void transfer_request(rio_t *rp, int fd, int proxyfd)
-{
-  printf("\n--------------proxy transfer_request start--------------\n");
-  char total_buf[MAXBUF];
-  char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], host[MAXLINE], port[MAXLINE];
-
-  int idx = 0;
-  printf("\n--------------proxy transfer_request loop start--------------\n");
-  while (strcmp(buf, "\r\n"))
-  {
-    Rio_readlineb(rp, buf, MAXLINE);
-    if (idx == 0)
-    {
-      strcpy(total_buf, buf);
-      printf("%s", buf);
-      sscanf(buf, "%s %s %s", method, uri, version);
-      idx++;
-    }
-    else
-    {
-      strcat(total_buf, buf);
-      printf("%s", buf);
-    }
-  }
-  printf("\n--------------proxy transfer_request loop end--------------\n");
-  printf("\nmethod = %s, uri = %s, version =%s\n", method, uri, version);
-  parse(uri, host, port);
-  printf("uri = %s, host = %s, port = %s\n", uri, host, port);
-  printf("\nIn request, total = \n%s\n", total_buf);
-  printf("\nmethod = %s, uri = %s, version =%s\n", method, uri, version);
-  strcpy(total_buf, method);
-  strcat(total_buf, " ");
-  strcat(total_buf, uri);
-  strcat(total_buf, " ");
-  strcat(total_buf, version);
-  strcat(total_buf, "\r\n\r\n");
-  printf("total_buf = %s\n", total_buf);
-  Rio_writen(proxyfd, total_buf, strlen(total_buf));
-  printf("\n--------------proxy transfer_request end----------------\n");
-  return;
 }
 char *response_request(rio_t *rp, int fd, int proxyfd, char uri[MAXLINE])
 {
@@ -165,8 +115,7 @@ char *response_request(rio_t *rp, int fd, int proxyfd, char uri[MAXLINE])
   int idx = 0;
   char size_str[MAXLINE];
   int size_i;
-  // char *total_buf = (char *)calloc(MAXBUF, sizeof(char));
-  printf("\nIn reponse, total0 = \n%s", total_buf_2);
+  /* Header 정보를 받아오는 부분 */
   strcpy(total_buf_2, "");
   strcpy(buf, "");
   while (strcmp(buf, "\r\n"))
@@ -176,42 +125,37 @@ char *response_request(rio_t *rp, int fd, int proxyfd, char uri[MAXLINE])
     {
       char *ptr = strchr(buf, ':');
       strcpy(size_str, ptr + 1);
-      // printf("size_str = %s\n", size_str);
     }
     if (idx == 0)
     {
       strcpy(total_buf_2, buf);
-      printf("a%s", buf);
-      // sscanf(buf, "%s %s %s", method, uri, version);
+      printf("%s", buf);
       idx++;
     }
     else
     {
       strcat(total_buf_2, buf);
-      printf("a%s", buf);
+      printf("%s", buf);
     }
   }
 
   size_i = atoi(size_str);
-  printf("size_i = %d\n", size_i);
 
-  printf("\nIn reponse, total = \n%s", total_buf_2);
-  printf("strlen(total_buf) = %d\n", strlen(total_buf_2));
   Rio_writen(fd, total_buf_2, strlen(total_buf_2));
-
   char *srcp = (char *)calloc(1, size_i);
   rio_readnb(rp, srcp, size_i);
-  printf("srcp = \n%s\n", srcp);
 
+  /* 캐싱 하는 부분 */
   if (size_i <= MAX_OBJECT_SIZE)
   {
+    /* 캐싱할 body의 정보를 담을 공간을 할당하고,
+    기존에 버퍼에 있던 정보를 새롭게 할당받은 공간으로 복사.
+    그 이후 block 구조체를 사용해서 캐싱된 리스트에 삽입.
+    만약 캐쉬의 최대 사이즈를 초과하면 뒤에서 부터 삭제 */
     size_t curr_cache_size = head->body_size;
     char *new_alloc_ptr = (char *)calloc(1, size_i);
     memcpy(new_alloc_ptr, srcp, size_i);
     block_t *created_block = new_block(new_alloc_ptr, size_i, NULL, NULL, uri);
-
-    printf("created_block(%x): alloc_ptr=%x, body_size=%d, pre=%x, nxt=%x\n",
-           created_block, created_block->alloc_ptr, created_block->body_size, created_block->pre, created_block->nxt);
 
     if (curr_cache_size + size_i <= MAX_CACHE_SIZE)
       add_list(created_block);
@@ -237,12 +181,10 @@ char *response_request(rio_t *rp, int fd, int proxyfd, char uri[MAXLINE])
 
   Rio_writen(fd, srcp, size_i);
   free(srcp);
-  printf("\n--------------proxy response_request end----------------\n");
   return;
 }
 char *response_request_from_proxy(rio_t *rp, int fd, int proxyfd, block_t *target)
 {
-  printf("\n--------------proxy response_request_from_proxy start--------------\n");
   char filetype[MAXLINE], buf[MAXBUF];
   char filename[MAXLINE];
   strcpy(filename, target->uri);
@@ -263,7 +205,6 @@ char *response_request_from_proxy(rio_t *rp, int fd, int proxyfd, block_t *targe
   printf("cache write act before");
   Rio_writen(fd, target->alloc_ptr, filesize);
   printf("body = \n%s\n", target->alloc_ptr);
-  printf("\n--------------proxy response_request_from_proxy end----------------\n");
   return;
 }
 int parse(char *uri, char *host, char *port)
@@ -277,14 +218,6 @@ int parse(char *uri, char *host, char *port)
   ptr1 += strlen("http://");
   ptr2 = strchr(ptr1, ':');
   ptr3 = strchr(ptr1, '/');
-
-  // printf("ptr1 = %s\n", ptr1);
-  // printf("ptr2 = %s\n", ptr2);
-  // printf("ptr3 = %s\n", ptr3);
-
-  // printf("ptr1 len = %d\n", strlen(ptr1));
-  // printf("ptr2 len = %d\n", strlen(ptr2));
-  // printf("ptr3 len = %d\n", strlen(ptr3));
 
   strncpy(host, ptr1, strlen(ptr1) - strlen(ptr2));
   printf("host = %s\n", host);
@@ -325,7 +258,6 @@ block_t *new_block(char *alloc_ptr, size_t body_size, block_t *pre, block_t *nxt
 }
 block_t *search(char target_uri[MAXLINE])
 {
-  printf("request uri = %s\n", target_uri);
   if (head->nxt == tail)
   {
     return NULL;
@@ -334,9 +266,10 @@ block_t *search(char target_uri[MAXLINE])
   block_t *curr = head->nxt;
   while (curr != tail)
   {
-    printf("curr uri = %s\n", curr->uri);
     if (strcmp(curr->uri, target_uri) == 0)
     {
+      pop_list(curr);
+      add_list(curr);
       return curr;
     }
     else
@@ -346,7 +279,6 @@ block_t *search(char target_uri[MAXLINE])
 }
 void pop_list(block_t *target)
 {
-  printf("\n--------------proxy pop_list start--------------\n");
   block_t *previous = target->pre;
   block_t *next = target->nxt;
 
@@ -358,11 +290,9 @@ void pop_list(block_t *target)
 
   head->body_size -= target->body_size;
   tail->body_size -= target->body_size;
-  printf("\n--------------proxy pop_list end---------------\n");
 }
 void add_list(block_t *target)
 {
-  printf("\n--------------proxy add_list start--------------\n");
   block_t *first = head->nxt;
 
   head->nxt = target;
@@ -372,7 +302,6 @@ void add_list(block_t *target)
 
   head->body_size += target->body_size;
   tail->body_size += target->body_size;
-  printf("\n--------------proxy add_list end----------------\n");
 }
 int main(int argc, char **argv)
 {
@@ -391,8 +320,6 @@ int main(int argc, char **argv)
   tail = new_block(NULL, 0, NULL, NULL, "");
   head->nxt = tail;
   tail->pre = head;
-  printf("head: alloc_ptr=%x, body_size=%d, pre=%x, nxt=%x\n", head->alloc_ptr, head->body_size, head->pre, head->nxt);
-  printf("tail: alloc_ptr=%x, tail=%d, tail=%x, tail=%x\n", tail->alloc_ptr, tail->body_size, tail->pre, tail->nxt);
 
   listenfd = Open_listenfd(argv[1]);
   while (1)
@@ -402,20 +329,6 @@ int main(int argc, char **argv)
     *connfdp = Accept(listenfd, (SA *)&clientaddr, &clientlen);
     Pthread_create(&tid, NULL, thread, connfdp);
   }
-  // while (1)
-  // {
-  //   clientlen = sizeof(clientaddr);
-  //   connfd = Accept(listenfd, (SA *)&clientaddr,
-  //                   &clientlen); // line:netp:tiny:accept
-  //   Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
-  //               0);
-  //   printf("Accepted connection from (%s, %s)\n", hostname, port);
-  //   doit(connfd);  // line:netp:tiny:doit
-  //   Close(connfd); // line:netp:tiny:close
-  // }
-
-  free(head);
-  free(tail);
 }
 
 /* Thread routine */
@@ -428,7 +341,3 @@ void *thread(void *vargp)
   Close(connfd);
   return NULL;
 }
-// int main() {
-//   printf("%s", user_agent_hdr);
-//   return 0;
-// }
