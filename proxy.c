@@ -108,7 +108,6 @@ void doit(int fd)
 }
 char *response_request(rio_t *rp, int fd, int proxyfd, char uri[MAXLINE])
 {
-  printf("\n--------------proxy response_request start--------------\n");
   char total_buf_2[MAXBUF];
   char buf[MAXLINE], method[MAXLINE], version[MAXLINE];
 
